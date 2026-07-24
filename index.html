@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>The Meals Menu</title>
+<meta name="description" content="Browse meals from the FreeAPI Meals API, plated up like a kitchen order rail." />
+
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Kalam:wght@400;700&display=swap" rel="stylesheet">
+
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: {
+          tile: '#1B2320',
+          tiledark: '#141A17',
+          paper: '#F6F1E2',
+          paperdim: '#EAE2CC',
+          ink: '#2B2620',
+          mustard: '#D9A441',
+          rust: '#C1440E',
+          sage: '#6E8B6B',
+        },
+        fontFamily: {
+          display: ['Oswald', 'sans-serif'],
+          mono: ['"IBM Plex Mono"', 'monospace'],
+          hand: ['Kalam', 'cursive'],
+        },
+      },
+    },
+  }
+</script>
+
+<style>
+  :root { color-scheme: light; }
+  body {
+  background-color: #1B2320;
+  background-image:
+    linear-gradient(
+      rgba(10, 15, 12, 0.60),
+      rgba(10, 15, 12, 0.50)
+    ),
+    url("./image/food-background.png");
+
+  background-size: cover;
+  background-position: center top;
+  background-attachment: fixed;
+  background-repeat: no-repeat;
+}
+
+  /* Perforated ticket top edge */
+  .ticket-edge {
+    position: relative;
+  }
+  .ticket-edge::before {
+    content: "";
+    position: absolute;
+    top: -1px; left: 0; right: 0;
+    height: 14px;
+    background-image: radial-gradient(circle at 10px 0, #1B2320 6px, transparent 6.5px);
+    background-size: 20px 14px;
+    background-repeat: repeat-x;
+    background-position: 6px 0;
+  }
+  .ticket-edge-dark::before {
+    background-image: radial-gradient(circle at 10px 0, #141A17 6px, transparent 6.5px);
+  }
+
+  .dash-line {
+    background-image: repeating-linear-gradient(90deg, #2B2620 0 8px, transparent 8px 16px);
+    height: 2px;
+    opacity: 0.25;
+  }
+
+  .stamp {
+    transform: rotate(-6deg);
+    border: 2.5px solid currentColor;
+    box-shadow: 0 0 0 1.5px currentColor inset;
+  }
+
+  .clip-circle {
+    box-shadow: 0 0 0 4px #1B2320, 0 0 0 5px rgba(255,255,255,0.15);
+  }
+
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { background: #141A17; }
+  ::-webkit-scrollbar-thumb { background: #3a463f; border-radius: 6px; }
+
+  .fade-in { animation: fadeIn 0.35s ease both; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+
+  .skeleton {
+    background: linear-gradient(90deg, #EAE2CC 25%, #f2ecdb 37%, #EAE2CC 63%);
+    background-size: 400% 100%;
+    animation: shimmer 1.4s ease infinite;
+  }
+  @keyframes shimmer { 0% { background-position: 100% 50%; } 100% { background-position: 0 50%; } }
+
+  .rail-line { background: repeating-linear-gradient(90deg, #D9A441 0 10px, transparent 10px 20px); height: 3px; }
+
+  #recipe-modal { backdrop-filter: blur(2px); }
+
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+</style>
+</head>
+
+<body class="min-h-screen text-paper font-mono">
+
+<!-- ============ HEADER / HERO ============ -->
+<header class="relative overflow-hidden border-b-2 border-dashed border-white/10">
+  <div class="max-w-6xl mx-auto px-5 sm:px-8 pt-10 pb-8">
+    <div class="flex items-center gap-3 text-mustard/90 text-xs tracking-[0.3em] uppercase mb-3">
+      <span class="inline-block w-2 h-2 rounded-full bg-rust animate-pulse"></span>
+      Order rail live &mdash; FreeAPI Meals
+    </div>
+    <h1 class="font-display font-700 uppercase leading-[0.9] text-5xl sm:text-7xl tracking-tight text-paper">
+      The<br class="sm:hidden" /> <span class="text-mustard">Meal</span> Board
+    </h1>
+    <p class="mt-4 max-w-xl text-sm sm:text-base text-paper/70 leading-relaxed">
+      Every ticket below is a real dish pulled straight from the kitchen&rsquo;s API &mdash; category stamped,
+      cuisine flagged, ingredients counted. Search the rail, filter by station, or pull a ticket to read the full method.
+    </p>
+    <div id="stats-line" class="mt-5 font-mono text-xs text-sage/80 tracking-wide">loading rail status&hellip;</div>
+  </div>
+  <div class="rail-line"></div>
+</header>
+
+<!-- ============ CONTROLS ============ -->
+<div class="sticky top-0 z-30 bg-tiledark/95 backdrop-blur border-b border-white/10">
+  <div class="max-w-6xl mx-auto px-5 sm:px-8 py-4 flex flex-col lg:flex-row gap-3 lg:items-center">
+    <!-- search "receipt slot" -->
+    <div class="relative flex-1">
+      <span class="absolute left-3 top-1/2 -translate-y-1/2 text-paper/40 text-sm">◎</span>
+      <input id="search-input" type="text" placeholder="search the rail — dish, area, ingredient…"
+        class="w-full bg-tile border border-white/15 focus:border-mustard/70 outline-none rounded-sm pl-9 pr-4 py-2.5 text-sm placeholder:text-paper/30 text-paper transition-colors" />
+    </div>
+
+    <!-- category select -->
+    <div class="flex items-center gap-2">
+      <label for="category-select" class="text-[11px] uppercase tracking-widest text-paper/40 hidden sm:block">station</label>
+      <select id="category-select" class="bg-tile border border-white/15 focus:border-mustard/70 outline-none rounded-sm px-3 py-2.5 text-sm text-paper">
+        <option value="">All</option>
+      </select>
+    </div>
+
+    <!-- area select -->
+    <div class="flex items-center gap-2">
+      <label for="area-select" class="text-[11px] uppercase tracking-widest text-paper/40 hidden sm:block">flag</label>
+      <select id="area-select" class="bg-tile border border-white/15 focus:border-mustard/70 outline-none rounded-sm px-3 py-2.5 text-sm text-paper">
+        <option value="">All</option>
+      </select>
+    </div>
+
+    <!-- sort -->
+    <div class="flex items-center gap-2">
+      <label for="sort-select" class="text-[11px] uppercase tracking-widest text-paper/40 hidden sm:block">sort</label>
+      <select id="sort-select" class="bg-tile border border-white/15 focus:border-mustard/70 outline-none rounded-sm px-3 py-2.5 text-sm text-paper">
+        <option value="default">Kitchen order</option>
+        <option value="az">Name A&rarr;Z</option>
+        <option value="za">Name Z&rarr;A</option>
+        <option value="ingredients-asc">Fewest ingredients</option>
+        <option value="ingredients-desc">Most ingredients</option>
+      </select>
+    </div>
+  </div>
+</div>
+
+<!-- ============ MAIN ============ -->
+<main class="max-w-6xl mx-auto px-5 sm:px-8 py-10">
+
+  <!-- loading progress ticket -->
+  <div id="loading-banner" class="hidden mb-6 border border-dashed border-mustard/40 rounded-sm px-4 py-3 text-xs text-mustard/90 flex items-center justify-between">
+    <span id="loading-text">firing up the pass&hellip; pulling ticket 1 / 30</span>
+    <div class="w-40 h-1.5 bg-tile rounded-full overflow-hidden">
+      <div id="loading-bar" class="h-full bg-mustard transition-all duration-200" style="width:0%"></div>
+    </div>
+  </div>
+
+  <!-- result meta -->
+  <div id="result-meta" class="mb-5 text-xs text-paper/40 tracking-wide"></div>
+
+  <!-- grid -->
+  <div id="meals-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6"></div>
+
+  <!-- empty state -->
+  <div id="empty-state" class="hidden text-center py-20">
+    <div class="font-display text-3xl text-paper/60 uppercase mb-2">86&rsquo;d</div>
+    <p class="text-sm text-paper/40">Nothing on the rail matches that search. Try another dish, station, or flag.</p>
+  </div>
+
+  <!-- pagination -->
+  <div id="pagination" class="mt-12 flex flex-wrap items-center justify-center gap-2"></div>
+</main>
+
+<footer class="border-t border-dashed border-white/10 mt-10">
+  <div class="max-w-6xl mx-auto px-5 sm:px-8 py-6 text-[11px] text-paper/30 flex flex-col sm:flex-row gap-2 justify-between">
+    <span>Data served by <a href="https://freeapi.app" target="_blank" rel="noopener" class="underline hover:text-mustard">FreeAPI.app</a> — Meals API</span>
+    <span>Built for Web Dev Cohort 2026 · FreeAPI Meals Listing Interface</span>
+  </div>
+</footer>
+
+<!-- ============ MODAL ============ -->
+<div id="recipe-modal" class="fixed inset-0 z-50 hidden items-start sm:items-center justify-center bg-black/70 p-3 sm:p-6 overflow-y-auto">
+  <div id="modal-card" class="relative w-full max-w-2xl bg-paper text-ink rounded-sm shadow-2xl my-6 sm:my-0"></div>
+</div>
+
+<script>
+(function () {
+  const API_BASE = "https://api.freeapi.app/api/v1/public/meals";
+  const PAGE_SIZE = 12; // items per page in our UI
+
+  /** @type {Array<Object>} */
+  let allMeals = [];
+  let filteredMeals = [];
+  let currentPage = 1;
+  let totalApiPages = 30; // fallback, confirmed on first fetch
+
+  const grid = document.getElementById('meals-grid');
+  const resultMeta = document.getElementById('result-meta');
+  const emptyState = document.getElementById('empty-state');
+  const pagination = document.getElementById('pagination');
+  const statsLine = document.getElementById('stats-line');
+  const loadingBanner = document.getElementById('loading-banner');
+  const loadingText = document.getElementById('loading-text');
+  const loadingBar = document.getElementById('loading-bar');
+  const searchInput = document.getElementById('search-input');
+  const categorySelect = document.getElementById('category-select');
+  const areaSelect = document.getElementById('area-select');
+  const sortSelect = document.getElementById('sort-select');
+  const modal = document.getElementById('recipe-modal');
+  const modalCard = document.getElementById('modal-card');
+
+  const palette = ['#D9A441', '#C1440E', '#6E8B6B', '#8E6FB0', '#3E7CB1'];
+  function colorFor(str) {
+    let h = 0;
+    for (let i = 0; i < str.length; i++) h = str.charCodeAt(i) + ((h << 5) - h);
+    return palette[Math.abs(h) % palette.length];
+  }
+
+  function ingredientsOf(meal) {
+    const list = [];
+    for (let i = 1; i <= 20; i++) {
+      const ing = (meal[`strIngredient${i}`] || '').trim();
+      const measure = (meal[`strMeasure${i}`] || '').trim();
+      if (ing) list.push({ name: ing, measure });
+    }
+    return list;
+  }
+
+  function skeletonCard() {
+    const div = document.createElement('div');
+    div.className = 'bg-paper rounded-sm ticket-edge overflow-hidden';
+    div.innerHTML = `
+      <div class="skeleton h-40 w-full"></div>
+      <div class="p-4 space-y-2">
+        <div class="skeleton h-4 w-3/4 rounded"></div>
+        <div class="skeleton h-3 w-1/2 rounded"></div>
+        <div class="skeleton h-3 w-full rounded"></div>
+      </div>`;
+    return div;
+  }
+
+  function renderSkeletons(n) {
+    grid.innerHTML = '';
+    for (let i = 0; i < n; i++) grid.appendChild(skeletonCard());
+  }
+
+  function mealCard(meal, index) {
+    const ticketNo = String(meal.idMeal).slice(-4);
+    const ings = ingredientsOf(meal);
+    const areaColor = colorFor(meal.strArea || 'Misc');
+    const card = document.createElement('article');
+    card.className = 'fade-in group bg-paper text-ink rounded-sm ticket-edge overflow-hidden cursor-pointer border border-black/5 hover:-translate-y-1 hover:shadow-[0_10px_0_0_rgba(0,0,0,0.15)] transition-all duration-200';
+    card.style.animationDelay = (index * 25) + 'ms';
+    card.tabIndex = 0;
+    card.setAttribute('role', 'button');
+    card.setAttribute('aria-label', 'View recipe for ' + meal.strMeal);
+
+    card.innerHTML = `
+      <div class="relative h-44 overflow-hidden bg-tile">
+        <img src="${meal.strMealThumb}" alt="${meal.strMeal}" loading="lazy"
+          class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+        <div class="absolute top-2 left-2 stamp text-[10px] font-display uppercase tracking-widest px-2 py-1 bg-paper/90 rounded-sm"
+          style="color:${areaColor}">${meal.strCategory || 'Misc'}</div>
+        <div class="absolute bottom-2 right-2 font-mono text-[10px] bg-black/60 text-paper px-1.5 py-0.5 rounded-sm tracking-wider">#${ticketNo}</div>
+      </div>
+      <div class="p-4">
+        <div class="flex items-start justify-between gap-2 mb-1">
+          <h3 class="font-display text-lg uppercase leading-tight tracking-tight">${meal.strMeal}</h3>
+        </div>
+        <div class="flex items-center gap-2 text-[11px] text-ink/60 mb-3">
+          <span style="color:${areaColor}">●</span>
+          <span class="uppercase tracking-wide">${meal.strArea || 'Unknown'}</span>
+        </div>
+        <div class="dash-line mb-3"></div>
+        <div class="flex items-center justify-between text-[11px] text-ink/70">
+          <span>${ings.length} ingredient${ings.length === 1 ? '' : 's'}</span>
+          <span class="font-hand text-sm text-rust">read ticket &rarr;</span>
+        </div>
+      </div>
+    `;
+    card.addEventListener('click', () => openModal(meal));
+    card.addEventListener('keypress', (e) => { if (e.key === 'Enter') openModal(meal); });
+    return card;
+  }
+
+  function openModal(meal) {
+    const ings = ingredientsOf(meal);
+    const areaColor = colorFor(meal.strArea || 'Misc');
+    const instructions = (meal.strInstructions || '').split(/\r?\n+/).filter(Boolean);
+    const tags = (meal.strTags || '').split(',').map(t => t.trim()).filter(Boolean);
+
+    modalCard.innerHTML = `
+      <button id="modal-close" aria-label="Close ticket" class="absolute top-3 right-3 z-10 w-8 h-8 rounded-full bg-ink/80 text-paper flex items-center justify-center hover:bg-rust transition-colors">✕</button>
+      <div class="relative h-56 sm:h-72 overflow-hidden">
+        <img src="${meal.strMealThumb}" alt="${meal.strMeal}" class="w-full h-full object-cover" />
+        <div class="absolute inset-0 bg-gradient-to-t from-ink/70 via-transparent to-transparent"></div>
+        <div class="absolute bottom-3 left-4 right-4">
+          <div class="flex items-center gap-2 mb-1">
+            <span class="stamp text-[10px] font-display uppercase tracking-widest px-2 py-0.5 bg-paper/90 rounded-sm" style="color:${areaColor}">${meal.strCategory || 'Misc'}</span>
+            <span class="text-[11px] text-paper/80 uppercase tracking-wide">${meal.strArea || 'Unknown'} kitchen</span>
+          </div>
+          <h2 class="font-display text-3xl sm:text-4xl uppercase text-paper leading-none">${meal.strMeal}</h2>
+        </div>
+      </div>
+
+      <div class="p-5 sm:p-7 ticket-edge">
+        <div class="flex flex-wrap items-center gap-2 mb-5">
+          ${tags.map(t => `<span class="font-hand text-sm px-2 py-0.5 border border-ink/20 rounded-sm text-ink/70">#${t}</span>`).join('')}
+          ${meal.strYoutube ? `<a href="${meal.strYoutube}" target="_blank" rel="noopener" class="ml-auto text-xs uppercase tracking-widest text-rust hover:underline">▶ watch method</a>` : ''}
+        </div>
+
+        <div class="grid sm:grid-cols-5 gap-6">
+          <div class="sm:col-span-2">
+            <h4 class="font-display uppercase tracking-widest text-xs text-ink/50 mb-3">Mise en place — ${ings.length} items</h4>
+            <ul class="space-y-1.5 text-sm">
+              ${ings.map(i => `<li class="flex justify-between gap-3 border-b border-dashed border-ink/10 pb-1"><span>${i.name}</span><span class="text-ink/50 whitespace-nowrap">${i.measure}</span></li>`).join('')}
+            </ul>
+          </div>
+          <div class="sm:col-span-3">
+            <h4 class="font-display uppercase tracking-widest text-xs text-ink/50 mb-3">Method</h4>
+            <ol class="space-y-3 text-sm leading-relaxed">
+              ${instructions.map((step, i) => `<li class="flex gap-3"><span class="font-display text-rust/80 shrink-0">${String(i + 1).padStart(2, '0')}</span><span>${step}</span></li>`).join('')}
+            </ol>
+            ${meal.strSource ? `<a href="${meal.strSource}" target="_blank" rel="noopener" class="inline-block mt-5 text-xs uppercase tracking-widest text-sage hover:underline">Original source ↗</a>` : ''}
+          </div>
+        </div>
+      </div>
+    `;
+    modal.classList.remove('hidden');
+    modal.classList.add('flex');
+    document.body.style.overflow = 'hidden';
+    document.getElementById('modal-close').addEventListener('click', closeModal);
+  }
+
+  function closeModal() {
+    modal.classList.add('hidden');
+    modal.classList.remove('flex');
+    document.body.style.overflow = '';
+  }
+  modal.addEventListener('click', (e) => { if (e.target === modal) closeModal(); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModal(); });
+
+  function populateFilters() {
+    const categories = [...new Set(allMeals.map(m => m.strCategory).filter(c => c && c.toLowerCase() !== 'pork'))].sort();
+    const areas = [...new Set(allMeals.map(m => m.strArea).filter(Boolean))].sort();
+    categorySelect.innerHTML = '<option value="">All stations</option>' + categories.map(c => `<option value="${c}">${c}</option>`).join('');
+    areaSelect.innerHTML = '<option value="">All flags</option>' + areas.map(a => `<option value="${a}">${a}</option>`).join('');
+  }
+
+  function applyFiltersAndRender(resetPage = true) {
+    const q = searchInput.value.trim().toLowerCase();
+    const cat = categorySelect.value;
+    const area = areaSelect.value;
+    const sort = sortSelect.value;
+
+    filteredMeals = allMeals.filter(m => {
+      const matchesQuery = !q ||
+        (m.strMeal || '').toLowerCase().includes(q) ||
+        (m.strArea || '').toLowerCase().includes(q) ||
+        (m.strCategory || '').toLowerCase().includes(q) ||
+        ingredientsOf(m).some(i => i.name.toLowerCase().includes(q));
+      const matchesCat = !cat || m.strCategory === cat;
+      const matchesArea = !area || m.strArea === area;
+      return matchesQuery && matchesCat && matchesArea;
+    });
+
+    if (sort === 'az') filteredMeals.sort((a, b) => a.strMeal.localeCompare(b.strMeal));
+    else if (sort === 'za') filteredMeals.sort((a, b) => b.strMeal.localeCompare(a.strMeal));
+    else if (sort === 'ingredients-asc') filteredMeals.sort((a, b) => ingredientsOf(a).length - ingredientsOf(b).length);
+    else if (sort === 'ingredients-desc') filteredMeals.sort((a, b) => ingredientsOf(b).length - ingredientsOf(a).length);
+
+    if (resetPage) currentPage = 1;
+    renderPage();
+  }
+
+  function renderPage() {
+    const totalItems = filteredMeals.length;
+    const totalPages = Math.max(1, Math.ceil(totalItems / PAGE_SIZE));
+    currentPage = Math.min(currentPage, totalPages);
+    const start = (currentPage - 1) * PAGE_SIZE;
+    const pageItems = filteredMeals.slice(start, start + PAGE_SIZE);
+
+    grid.innerHTML = '';
+    if (pageItems.length === 0) {
+      emptyState.classList.remove('hidden');
+      resultMeta.textContent = '';
+    } else {
+      emptyState.classList.add('hidden');
+      pageItems.forEach((meal, i) => grid.appendChild(mealCard(meal, i)));
+      resultMeta.textContent = `showing ${start + 1}–${Math.min(start + PAGE_SIZE, totalItems)} of ${totalItems} tickets`;
+    }
+    renderPagination(totalPages);
+    window.scrollTo({ top: grid.offsetTop - 90, behavior: currentPage === 1 ? 'auto' : 'smooth' });
+  }
+
+  function renderPagination(totalPages) {
+    pagination.innerHTML = '';
+    if (totalPages <= 1) return;
+
+    const makeBtn = (label, page, opts = {}) => {
+      const btn = document.createElement('button');
+      btn.textContent = label;
+      const active = page === currentPage;
+      btn.className = `min-w-[36px] h-9 px-2 rounded-sm text-xs font-mono border transition-colors ${
+        active ? 'bg-mustard text-ink border-mustard font-semibold' : 'border-white/15 text-paper/70 hover:border-mustard/60 hover:text-mustard'
+      } ${opts.disabled ? 'opacity-30 pointer-events-none' : ''}`;
+      btn.addEventListener('click', () => { currentPage = page; renderPage(); });
+      return btn;
+    };
+
+    pagination.appendChild(makeBtn('‹ prev', Math.max(1, currentPage - 1), { disabled: currentPage === 1 }));
+
+    const windowSize = 5;
+    let startPage = Math.max(1, currentPage - Math.floor(windowSize / 2));
+    let endPage = Math.min(totalPages, startPage + windowSize - 1);
+    startPage = Math.max(1, endPage - windowSize + 1);
+
+    if (startPage > 1) {
+      pagination.appendChild(makeBtn('1', 1));
+      if (startPage > 2) pagination.appendChild(Object.assign(document.createElement('span'), { textContent: '…', className: 'text-paper/30 px-1' }));
+    }
+    for (let p = startPage; p <= endPage; p++) pagination.appendChild(makeBtn(String(p), p));
+    if (endPage < totalPages) {
+      if (endPage < totalPages - 1) pagination.appendChild(Object.assign(document.createElement('span'), { textContent: '…', className: 'text-paper/30 px-1' }));
+      pagination.appendChild(makeBtn(String(totalPages), totalPages));
+    }
+
+    pagination.appendChild(makeBtn('next ›', Math.min(totalPages, currentPage + 1), { disabled: currentPage === totalPages }));
+  }
+
+  async function fetchPage(page) {
+    const res = await fetch(`${API_BASE}?page=${page}&limit=10`);
+    if (!res.ok) throw new Error('Request failed: ' + res.status);
+    const json = await res.json();
+    return json.data;
+  }
+
+  async function loadAllMeals() {
+    renderSkeletons(9);
+    loadingBanner.classList.remove('hidden');
+    try {
+      const first = await fetchPage(1);
+      totalApiPages = first.totalPages || 1;
+      allMeals = [...first.data];
+
+      const CONCURRENCY = 6;
+      let nextPage = 2;
+      let loaded = 1;
+
+      async function worker() {
+        while (nextPage <= totalApiPages) {
+          const page = nextPage++;
+          try {
+            const data = await fetchPage(page);
+            allMeals.push(...data.data);
+          } catch (e) {
+            console.error('Failed page', page, e);
+          }
+          loaded++;
+          const pct = Math.round((loaded / totalApiPages) * 100);
+          loadingBar.style.width = pct + '%';
+          loadingText.textContent = `firing up the pass… pulling ticket ${loaded} / ${totalApiPages}`;
+        }
+      }
+
+      await Promise.all(Array.from({ length: CONCURRENCY }, worker));
+
+      allMeals = allMeals.filter(m => {
+        const category = (m.strCategory || '').toLowerCase();
+        const name = (m.strMeal || '').toLowerCase();
+        const ings = ingredientsOf(m).map(i => i.name.toLowerCase());
+        const mentionsBeef = category === 'beef' || name.includes('beef') || ings.some(i => i.includes('beef'));
+        return !mentionsBeef;
+      });
+      allMeals.sort((a, b) => (a.id || 0) - (b.id || 0));
+      statsLine.textContent = `${allMeals.length} dishes on the rail · ${new Set(allMeals.map(m => m.strCategory)).size} stations · ${new Set(allMeals.map(m => m.strArea)).size} flags`;
+      populateFilters();
+      applyFiltersAndRender();
+    } catch (err) {
+      console.error(err);
+      grid.innerHTML = `<div class="col-span-full text-center py-16 text-rust">
+        Couldn&rsquo;t reach the kitchen (${err.message}). Refresh to try again.
+      </div>`;
+      statsLine.textContent = 'rail offline';
+    } finally {
+      loadingBanner.classList.add('hidden');
+    }
+  }
+
+  let searchDebounce;
+  searchInput.addEventListener('input', () => {
+    clearTimeout(searchDebounce);
+    searchDebounce = setTimeout(() => applyFiltersAndRender(), 200);
+  });
+  categorySelect.addEventListener('change', () => applyFiltersAndRender());
+  areaSelect.addEventListener('change', () => applyFiltersAndRender());
+  sortSelect.addEventListener('change', () => applyFiltersAndRender());
+
+  loadAllMeals();
+})();
+</script>
+</body>
+</html>
